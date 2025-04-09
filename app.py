@@ -45,7 +45,7 @@ if uploaded_file is not None:
     with col2:
         st.image(row['imgurl_B'], caption="图片 B", use_column_width=True)
 
-    st.markdown("### 请点击下方按钮进行标注（点击后将自动跳转到下一对图片）")
+    st.markdown("### 请点击下方按钮进行标注（标注后自动跳转到下一对图片）")
 
     # 定义标注回调函数，不直接调用 experimental_rerun，而是设置一个标志
     def mark_and_jump(label):
@@ -54,11 +54,23 @@ if uploaded_file is not None:
             st.session_state.current_index += 1
         st.session_state.need_rerun = True
 
-    col_yes, col_no = st.columns(2)
-    col_yes.button("是", on_click=mark_and_jump, args=("是",), key=f"yes_{current_index}")
-    col_no.button("否", on_click=mark_and_jump, args=("否",), key=f"no_{current_index}")
+    mark_col1, mark_col2 = st.columns(2)
+    mark_col1.button("是", on_click=mark_and_jump, args=("是",), key=f"yes_{current_index}")
+    mark_col2.button("否", on_click=mark_and_jump, args=("否",), key=f"no_{current_index}")
 
-    # 在页面末尾检查重跑标志，并调用 experimental_rerun 实现自动跳转
+    st.markdown("---")
+    st.write("### 导航")
+    nav_col1, nav_col2 = st.columns(2)
+    if nav_col1.button("上一张"):
+        if st.session_state.current_index > 0:
+            st.session_state.current_index -= 1
+        st.experimental_rerun()
+    if nav_col2.button("下一张"):
+        if st.session_state.current_index < total_rows - 1:
+            st.session_state.current_index += 1
+        st.experimental_rerun()
+
+    # 自动重跑逻辑：检查标注按钮回调后是否需要自动跳转
     if st.session_state.need_rerun:
         st.session_state.need_rerun = False
         st.experimental_rerun()
