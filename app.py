@@ -1,76 +1,87 @@
 import streamlit as st
 import pandas as pd
+import streamlit.components.v1 as components
 
-st.title("图片对比及标签工具 - CSV版")
-st.write("请上传一个 CSV 文件，文件中应包含 'imgurl_A' 和 'imgurl_B' 两列，每行对应一对图片的地址。")
+# 页面标题
+st.title("图片对比及键盘标注工具 - CSV版")
+st.write("上传包含 'imgurl_A' 和 'imgurl_B' 列的 CSV，使用 ←/→ 浏览，1=是，0=否。")
 
-# 初始化 session_state，用于保存当前图片索引、各行的标注以及重跑标志
-if 'current_index' not in st.session_state:
-    st.session_state.current_index = 0
-if 'labels' not in st.session_state:
-    st.session_state.labels = {}
-if 'need_rerun' not in st.session_state:
-    st.session_state.need_rerun = False
+# 初始化 session_state
+ss = st.session_state
+if 'current_index' not in ss:
+    ss.current_index = 0
+if 'labels' not in ss:
+    ss.labels = {}
+# 用于接收 JS 传来的按键信息
+if 'key_event' not in ss:
+    ss.key_event = ""
 
-# 上传 CSV 文件
-uploaded_file = st.file_uploader("上传 CSV 文件", type=["csv"])
-if uploaded_file is not None:
-    # 读取 CSV 文件，并去除列名前后空格
-    df = pd.read_csv(uploaded_file)
+# 上传 CSV
+uploaded = st.file_uploader("上传 CSV", type="csv")
+if uploaded:
+    df = pd.read_csv(uploaded)
     df.columns = df.columns.str.strip()
+    n = len(df)
+    st.write(f"共 {n} 对图片")
 
-    total_rows = len(df)
-    st.write(f"共 {total_rows} 对图片")
-    st.dataframe(df)
+    # 隐藏的侧边栏 text_input，用来承载 JS 传回的按键
+    st.sidebar.text_input("hidden", key="key_event", value="", label_visibility="collapsed")
+    # 隐藏 sidebar 中的所有输入框
+    st.sidebar.markdown(
+        """<style>[data-testid="stSidebar"] input {display:none;}</style>""",
+        unsafe_allow_html=True,
+    )
 
-    # 侧边栏始终显示导出按钮，方便随时导出当前标注结果
-    st.sidebar.header("导出标注结果")
-    if st.sidebar.button("导出当前标注结果"):
-        # 对于未标注的行保留空白，标注了的显示“是”或“否”
-        labels_list = [st.session_state.labels.get(i, "") for i in range(total_rows)]
-        df['label'] = labels_list
-        csv_data = df.to_csv(index=False).encode('utf-8')
-        st.sidebar.download_button("点击下载 CSV 文件", csv_data,
-                                   file_name="labeled_data.csv", mime="text/csv")
+    # 侧边栏导出
+    st.sidebar.header("导出")
+    if st.sidebar.button("导出标注结果"):
+        labels = [ss.labels.get(i, "") for i in range(n)]
+        df['label'] = labels
+        data = df.to_csv(index=False).encode('utf-8')
+        st.sidebar.download_button("下载 CSV", data, "labeled.csv", "text/csv")
 
-    st.write("### 开始对图片进行对比和标注")
-
-    current_index = st.session_state.current_index
-    row = df.iloc[current_index]
-    st.write(f"#### 图片对比 {current_index + 1} / {total_rows}")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(row['imgurl_A'], caption="图片 A", use_column_width=True)
-    with col2:
-        st.image(row['imgurl_B'], caption="图片 B", use_column_width=True)
-
-    st.markdown("### 请点击下方按钮进行标注（标注后自动跳转到下一对图片）")
-
-    # 定义标注回调函数，不直接调用 experimental_rerun，而是设置一个标志
-    def mark_and_jump(label):
-        st.session_state.labels[st.session_state.current_index] = label
-        if st.session_state.current_index < total_rows - 1:
-            st.session_state.current_index += 1
-        st.session_state.need_rerun = True
-
-    mark_col1, mark_col2 = st.columns(2)
-    mark_col1.button("是", on_click=mark_and_jump, args=("是",), key=f"yes_{current_index}")
-    mark_col2.button("否", on_click=mark_and_jump, args=("否",), key=f"no_{current_index}")
-
-    st.markdown("---")
-    st.write("### 导航")
-    nav_col1, nav_col2 = st.columns(2)
-    if nav_col1.button("上一张"):
-        if st.session_state.current_index > 0:
-            st.session_state.current_index -= 1
-        st.experimental_rerun()
-    if nav_col2.button("下一张"):
-        if st.session_state.current_index < total_rows - 1:
-            st.session_state.current_index += 1
+    # 监听到按键事件后，更新状态并重置 key_event
+    e = ss.key_event
+    if e:
+        if e == "left":
+            ss.current_index = max(0, ss.current_index - 1)
+        elif e == "right" or e in ("1", "0"):  # 标注后跳下一张
+            if e == "1":
+                ss.labels[ss.current_index] = "是"
+            elif e == "0":
+                ss.labels[ss.current_index] = "否"
+            ss.current_index = min(n - 1, ss.current_index + 1)
+        ss.key_event = ""
         st.experimental_rerun()
 
-    # 自动重跑逻辑：检查标注按钮回调后是否需要自动跳转
-    if st.session_state.need_rerun:
-        st.session_state.need_rerun = False
-        st.experimental_rerun()
+    # 显示当前图片
+    idx = ss.current_index
+    row = df.iloc[idx]
+    st.write(f"### {idx+1}/{n}")
+    c1, c2 = st.columns(2)
+    c1.image(row["imgurl_A"], caption="A", use_column_width=True)
+    c2.image(row["imgurl_B"], caption="B", use_column_width=True)
+
+    st.write("按 **1** 标“是”，**0** 标“否”，**←/→** 翻页。")
+    st.write("当前标注：", ss.labels.get(idx, "未标注"))
+
+    # 注入 JS：将键盘事件写入 sidebar 隐藏输入框
+    components.html(
+        """
+        <script>
+        const input = parent.document.querySelector('[data-testid="stSidebar"] input');
+        document.addEventListener('keydown', e => {
+            let v = "";
+            if (e.key === 'ArrowLeft') v = 'left';
+            else if (e.key === 'ArrowRight') v = 'right';
+            else if (e.key === '1') v = '1';
+            else if (e.key === '0') v = '0';
+            if (v) {
+                input.value = v;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        </script>
+        """,
+        height=0,
+    )
